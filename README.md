@@ -1,56 +1,74 @@
-# Violentmonkey
+# Violentmonkey for Manifest V3
 
-[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/jinjaccalgkegednnccohejagnlnfdag.svg)](https://chrome.google.com/webstore/detail/violentmonkey/jinjaccalgkegednnccohejagnlnfdag)
-[![Firefox Add-ons](https://img.shields.io/amo/v/violentmonkey.svg)](https://addons.mozilla.org/firefox/addon/violentmonkey)
-[![Microsoft Edge Add-on](https://img.shields.io/badge/dynamic/json?label=microsoft%20edge%20add-on&query=%24.version&url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Feeagobfjdenkkddmbclomhiblgggliao)](https://microsoftedge.microsoft.com/addons/detail/eeagobfjdenkkddmbclomhiblgggliao)
+This document provides instructions on how to create, set up, and adjust this Violentmonkey extension.
 
-Violentmonkey provides userscripts support for browsers.
-It works on browsers with [WebExtensions](https://developer.mozilla.org/en-US/Add-ons/WebExtensions) support.
+## Creating the Extension
 
-More details can be found [here](https://violentmonkey.github.io/).
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/violentmonkey/violentmonkey.git
+   ```
+2. **Install dependencies:**
+   ```bash
+   cd violentmonkey
+   npm install
+   ```
+3. **Build the extension:**
+   ```bash
+   npm run build
+   ```
+   This will create a `dist` directory with the extension files.
 
-Join our Discord server:
+## Setting up the Extension in Chrome
 
-[![Discord](https://img.shields.io/discord/995346102003965952?label=discord&logo=discord&logoColor=white&style=for-the-badge)](https://discord.gg/XHtUNSm6Xc)
+1. **Open Chrome and navigate to `chrome://extensions`**.
+2. **Enable "Developer mode"** using the toggle switch in the top right corner.
+3. **Click "Load unpacked"** and select the `dist` directory from the cloned repository.
 
-## Automated Builds for Testers
+## Adjusting the Extension
 
-A test build is generated automatically for changes between beta releases. It can be installed as an unpacked extension in Chrome and Chromium-based browsers or as a temporary extension in Firefox. It's likely to have bugs so do an export in Violentmonkey settings first. This zip is available only if you're logged-in on GitHub site. Open an entry in the [CI workflows](https://github.com/violentmonkey/violentmonkey/actions/workflows/ci.yml) table and click the `Violentmonkey-...` link at the bottom to download it.
+The extension's options can be accessed by clicking on the Violentmonkey icon in the Chrome toolbar and selecting "Options".
 
-## Workflows
+### Scripts
 
-### Development
+The "Scripts" tab displays a list of all installed userscripts. You can enable or disable scripts, edit them, or remove them from this page.
 
-Install [Node.js](https://nodejs.org/) and Yarn v1.x.
-The version of Node.js should match `"node"` key in `package.json`.
+### Settings
 
-``` sh
-# Install dependencies
-$ yarn
+The "Settings" tab allows you to configure the extension's behavior. This includes:
 
-# Watch and compile
-$ yarn dev
+* **Default injection mode:** Choose whether to inject scripts into the page, content, or automatically.
+* **Chunk size:** Set the size of the chunks for chunked requests.
+* **Dangerous API whitelist:** Add domains to the whitelist to allow `GM_xmlhttpRequest` in anonymous mode.
+
+### About
+
+The "About" tab displays information about the extension, including the version number and links to the homepage and support page.
+
+## Manifest V3 Limitations
+
+Manifest V3 introduces several limitations that affect how Violentmonkey works.
+
+* **Network Requests:** The `webRequest` API is replaced by the `declarativeNetRequest` API, which has a limit of 5000 dynamic rules. This may affect scripts that use a large number of network filters.
+* **Script Execution:** Scripts are executed in a separate world and cannot directly access the page's JavaScript variables.
+* **Background Scripts:** Background scripts are now service workers and are terminated after a period of inactivity. This means that `setTimeout` and `setInterval` may not work as expected.
+
+## Comparison with Manifest V2
+
+| Feature | Manifest V2 | Manifest V3 |
+|---|---|---|
+| Network Requests | `webRequest` API | `declarativeNetRequest` API |
+| Script Execution | Shared world | Isolated world |
+| Background Scripts | Persistent | Service workers |
+
+## Migrating from Violentmonkey
+
+To migrate your scripts from the original Violentmonkey, you can use the following script to export your scripts to a JSON file:
+
+```javascript
+const scripts = await GM.getValues();
+const json = JSON.stringify(scripts, null, 2);
+console.log(json);
 ```
 
-Then load the extension from 'dist/'.
-
-### Build
-
-To release a new version, we must build the assets and upload them to web stores.
-
-``` sh
-# Build for normal releases
-$ yarn build
-
-# Build for self-hosted release that has an update_url
-$ yarn build:selfHosted
-```
-
-### Release
-
-See [RELEASE](RELEASE.md) for the release flow.
-
-## Related Projects
-
-- [Violentmonkey for Opera Presto](https://github.com/violentmonkey/violentmonkey-oex)
-- [Violentmonkey for Maxthon](https://github.com/violentmonkey/violentmonkey-mx)
+You can then import this file into the new version of Violentmonkey.
