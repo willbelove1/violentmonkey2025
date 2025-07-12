@@ -59,21 +59,49 @@ export async function dnrReady() {
   return available > 0;
 }
 
+function autoCompressRules(rules) {
+  const compressedRules = [];
+  const ruleMap = new Map();
+
+  for (const rule of rules) {
+    const key = JSON.stringify(rule.condition);
+    if (ruleMap.has(key)) {
+      const existingRule = ruleMap.get(key);
+      existingRule.action = { ...existingRule.action, ...rule.action };
+    } else {
+      ruleMap.set(key, rule);
+    }
+  }
+
+  let idCounter = DNR_ID_RESERVED;
+  for (const rule of ruleMap.values()) {
+    if (idCounter >= 5000) {
+      console.warn('Too many dynamic rules');
+      break;
+    }
+    rule.id = idCounter++;
+    compressedRules.push(rule);
+  }
+
+  return compressedRules;
+}
+
 export async function dnrUpdateDynamicRules(rules) {
   const all = await browser.declarativeNetRequest.getDynamicRules();
   const allIds = all.map(r => r.id);
+  const compressedRules = autoCompressRules(rules);
   const addRules = [];
   const updateRules = [];
   const removeRuleIds = new Set(allIds);
-  for (const rule of rules) {
-    const id = rule.id + DNR_ID_RESERVED;
-    rule.id = id;
-    if (removeRuleIds.delete(id)) {
+
+  for (const rule of compressedRules) {
+    if (removeRuleIds.delete(rule.id)) {
       updateRules.push(rule);
     } else {
       addRules.push(rule);
     }
   }
+
   return browser.declarativeNetRequest.updateDynamicRules({
     addRules,
     removeRuleIds: [...removeRuleIds],

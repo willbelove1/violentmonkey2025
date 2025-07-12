@@ -5,7 +5,8 @@ import { handleHotkeyOrMenu } from './utils/icon';
 import { addPublicCommands, commands, init } from './utils';
 import './sync';
 import './utils/clipboard';
-import './utils/declarative-net-request';
+import './event-handlers/network';
+import './event-handlers/userscript-lifecycle';
 import './utils/notifications';
 import './utils/preinject';
 import './utils/script';
@@ -13,6 +14,7 @@ import './utils/storage-fetch';
 import './utils/tab-redirector';
 import './utils/tester';
 import './utils/update';
+import { onBackgroundMessage, onBackgroundCompleted } from './utils/message';
 
 addPublicCommands({
   /**
@@ -24,6 +26,13 @@ addPublicCommands({
     return ms > 0 && makePause(ms);
   },
 });
+
+chrome.scripting.registerContentScripts([{
+  id: 'userscript-loader',
+  matches: ['<all_urls>'],
+  js: ['injected.js'],
+  runAt: 'document_start',
+}]);
 
 function handleCommandMessage({ cmd, data, url, [kTop]: mode } = {}, src) {
   if (init) {
@@ -67,7 +76,9 @@ async function handleCommandMessageAsync(func, data, src) {
 
 global.handleCommandMessage = handleCommandMessage;
 global.deepCopy = deepCopy;
+browser.runtime.onMessage.addListener(onBackgroundMessage);
 browser.runtime.onMessage.addListener(handleCommandMessage);
 browser.commands?.onCommand.addListener(async cmd => {
   handleHotkeyOrMenu(cmd, await getActiveTab());
 });
+onBackgroundCompleted();
