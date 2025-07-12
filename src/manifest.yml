@@ -1,6 +1,6 @@
 name: __MSG_extName__
 version: __VERSION__
-manifest_version: 2
+manifest_version: 3
 description: __MSG_extDescription__
 author: Gerald
 homepage_url: 'https://violentmonkey.github.io/'
@@ -9,7 +9,7 @@ icons:
   '48': public/images/icon48.png
   '128': public/images/icon128.png
 default_locale: en
-browser_action:
+action:
   browser_style: true
   default_icon:
     '16': public/images/icon16b.png
@@ -20,31 +20,39 @@ browser_action:
   default_title: __MSG_extName__
   default_popup: popup/index.html
 background:
-  scripts: []
+  service_worker: ''
 options_ui:
   page: options/index.html#settings
   open_in_tab: true
 content_scripts:
   - js:
       - injected-web.js
+    matches:
+      - <all_urls>
+    run_at: document_start
+    all_frames: true
+    world: MAIN
+  - js:
       - injected.js
     matches:
       - <all_urls>
     run_at: document_start
     all_frames: true
+host_permissions:
+  - <all_urls>
 permissions:
   - tabs
-  - <all_urls>
-  - webRequest
-  - webRequestBlocking
   - notifications
   - storage
   - unlimitedStorage
   - clipboardWrite
   - contextMenus
   - cookies
+  - declarativeNetRequest
+  - declarativeNetRequestWithHostAccess
+  - declarativeNetRequestFeedback
 commands:
-  _execute_browser_action: {}
+  _execute_action: {}
   toggleInjection:
     description: __MSG_toggleInjection__
   dashboard:
@@ -60,7 +68,12 @@ commands:
   updateScriptsInTab:
     description: __MSG_updateScriptsInTab__
 
-minimum_chrome_version: '61.0'
+minimum_chrome_version: '102.0'
+# 102: `world` in content_scripts
+# 99: `Promise.withResolvers` (polyfilled)
+# 96: `structuredClone` (polyfilled)
+# 93: `Object.hasOwn`
+# 88: `declarativeNetRequest`
 # 61: URLSearchParams(obj)
 # 61: scrollIntoView({ behavior: 'smooth' })
 # 60: {...spreadOrRest}
@@ -69,4 +82,4 @@ minimum_chrome_version: '61.0'
 browser_specific_settings:
   gecko:
     id: '{aecec67f-0d10-4fa7-b7c7-609a2db280cf}'
-    strict_min_version: '58.0'
+    strict_min_version: '113.0'
