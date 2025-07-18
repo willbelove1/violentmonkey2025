@@ -112,6 +112,9 @@
     "setupFilesAfterEnv": [
       "./test/mock/index.js"
     ],
-    "testEnvironment": "./test/mock/env.js"
+    "testEnvironment": "./test/mock/env.js",
+    "testMatch": [
+      "**/test/**/*.test.js"
+    ]
   }
 }

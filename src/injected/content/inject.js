@@ -301,9 +301,51 @@ async function injectPageList(runAt) {
       tardyQueueCheck([scr]);
       // Exposing window.vmXXX setter just before running the script to avoid interception
       if (!scr.meta.unwrap) bridge.post('Plant', scr.key);
-      inject(scr);
-      scr.code = '';
-      if (scr.meta.unwrap) Run(scr.id);
+
+      // Fetch @require scripts
+      if (scr.meta.require?.length) {
+        for (const url of scr.meta.require) {
+          const requiredScript = await new Promise(resolve => {
+            chrome.runtime.sendMessage({
+              action: 'fetch',
+              url,
+            }, resolve);
+          });
+          if (requiredScript.data) {
+            inject({ code: requiredScript.data, displayName: `required script: ${url}` });
+          }
+        }
+      }
+
+      // Fetch @resource scripts
+      if (scr.meta.resource?.length) {
+        for (const url of scr.meta.resource) {
+          const resource = await new Promise(resolve => {
+            chrome.runtime.sendMessage({
+              action: 'GetResource',
+              url,
+            }, resolve);
+          });
+          if (resource.data) {
+            bridge.resources[url] = resource.data;
+          }
+        }
+      }
+
+      const analysis = await new Promise(resolve => {
+        chrome.runtime.sendMessage({
+          action: 'AnalyzeScript',
+          code: scr.code,
+        }, resolve);
+      });
+
+      if (analysis.isValid) {
+        inject(scr);
+        scr.code = '';
+        if (scr.meta.unwrap) Run(scr.id);
+      } else {
+        console.error('Script analysis failed:', analysis.error);
+      }
     }
   }
 }

@@ -13,6 +13,18 @@ import './utils/tab-redirector';
 import './utils/tester';
 import './utils/update';
 
+async function analyzeScriptWithGemini(code) {
+  try {
+    // This is a placeholder for the actual Gemini API call.
+    // In a real implementation, you would make a fetch request to the Gemini API.
+    console.log('Analyzing script with Gemini:', code);
+    return { isValid: true };
+  } catch (error) {
+    console.error('Gemini API error:', error);
+    return { isValid: false, error: error.message };
+  }
+}
+
 addPublicCommands({
   /**
    * Timers in content scripts are shared with the web page so it can clear them.
@@ -21,6 +33,9 @@ addPublicCommands({
    */
   SetTimeout(ms) {
     return ms > 0 && makePause(ms);
+  },
+  async AnalyzeScript({ code }) {
+    return analyzeScriptWithGemini(code);
   },
 });
 
@@ -51,6 +66,29 @@ function handleCommandMessage({ cmd, data, url, [kTop]: mode } = {}, src) {
   }
   return handleCommandMessageAsync(func, data, src);
 }
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'fetch') {
+    const { url, options } = message;
+    // Basic validation
+    if (!url || !url.startsWith('http')) {
+      sendResponse({ error: 'Invalid URL' });
+      return;
+    }
+    fetch(url, options)
+      .then(response => response.text())
+      .then(data => sendResponse({ data }))
+      .catch(error => sendResponse({ error: error.message }));
+    return true; // Keep the message channel open for sendResponse
+  }
+  if (message.action === 'GetResource') {
+    const { url } = message;
+    // In a real implementation, you would fetch the resource from the cache
+    // or from the network, and return it as a data URL.
+    // For now, we'll just return a dummy response.
+    sendResponse({ data: `data:text/plain;base64,${btoa(`Resource content for ${url}`)}` });
+  }
+});
 
 async function handleCommandMessageAsync(func, data, src) {
   try {

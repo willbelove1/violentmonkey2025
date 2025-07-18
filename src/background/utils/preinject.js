@@ -32,19 +32,14 @@ let ffInject;
 let xhrInject = false; // must be initialized for proper comparison when toggling
 
 const sessionId = getUniqId();
-const API_HEADERS_RECEIVED = browser.webRequest.onHeadersReceived;
-const API_CONFIG = {
-  urls: ['*://*/*'], // `*` scheme matches only http and https
-  types: ['main_frame', 'sub_frame'],
-};
-const API_EXTRA = [
-  'blocking', // used for xhrInject and to make Firefox fire the event before GetInjected
-  kResponseHeaders,
-  browser.webRequest.OnHeadersReceivedOptions.EXTRA_HEADERS,
-].filter(Boolean);
-const findCspHeader = h => h.name.toLowerCase() === 'content-security-policy';
-const CSP_RE = /(?:^|[;,])\s*(?:script-src(-elem)?|(d)efault-src)(\s+[^;,]+)/g;
-const NONCE_RE = /'nonce-([-+/=\w]+)'/;
+browser.webNavigation.onCompleted.addListener((details) => {
+  if (details.frameId === 0) { // Top-level frame
+    const key = getKey(details.url, true);
+    if (!cache.has(key) && !skippedTabs[details.tabId]) {
+      prepare(key, details.url, true);
+    }
+  }
+});
 const SKIP_COMMENTS_RE = /^\s*(?:\/\*[\s\S]*?\*\/|\/\/.*[\r\n]+|\s+)*/u;
 /** Not using a combined regex to check for the chars to avoid catastrophic backtracking */
 const isUnsafeConcat = s => (s = s.charCodeAt(s.match(SKIP_COMMENTS_RE)[0].length)) === 45/*"-"*/
@@ -124,17 +119,8 @@ const OPT_HANDLERS = {
   defaultInjectInto(value) {
     value = normalizeRealm(value);
     cache.destroy();
-    if (injectInto) { // already initialized, so we should update the listener
-      if (value === CONTENT) {
-        API_HEADERS_RECEIVED.removeListener(onHeadersReceived);
-      } else if (isApplied && IS_FIREFOX && !xhrInject) {
-        API_HEADERS_RECEIVED.addListener(onHeadersReceived, API_CONFIG, API_EXTRA);
-      }
-    }
     injectInto = value;
   },
-  /** WARNING! toggleXhrInject should precede togglePreinject as it sets xhrInject variable */
-  xhrInject: toggleXhrInject,
   [IS_APPLIED]: togglePreinject,
   [EXPOSE](value) {
     value::forEachEntry(([site, isExposed]) => {
@@ -295,37 +281,6 @@ function onOptionChanged(changes) {
   }
 }
 
-function toggleXhrInject(enable) {
-  if (enable) enable = injectInto !== CONTENT;
-  if (xhrInject === enable) return;
-  xhrInject = enable;
-  cache.destroy();
-  API_HEADERS_RECEIVED.removeListener(onHeadersReceived);
-  if (enable) {
-    API_HEADERS_RECEIVED.addListener(onHeadersReceived, API_CONFIG, API_EXTRA);
-  }
-}
-
-function togglePreinject(enable) {
-  isApplied = enable;
-  // Using onSendHeaders because onHeadersReceived in Firefox fires *after* content scripts.
-  // And even in Chrome a site may be so fast that preinject on onHeadersReceived won't be useful.
-  const onOff = `${enable ? 'add' : 'remove'}Listener`;
-  const config = enable ? API_CONFIG : undefined;
-  browser.webRequest.onSendHeaders[onOff](onSendHeaders, config);
-  if (!isApplied /* remove the listener */
-  || IS_FIREFOX && !xhrInject && injectInto !== CONTENT /* add 'nonce' detector */) {
-    API_HEADERS_RECEIVED[onOff](onHeadersReceived, config, config && API_EXTRA);
-  }
-  tabsOnRemoved[onOff](onTabRemoved);
-  browser.tabs.onReplaced[onOff](onTabReplaced);
-  if (!enable) {
-    cache.destroy();
-    clearFrameData();
-    clearStorageCache();
-  }
-}
-
 function toggleFastFirefoxInject(enable) {
   ffInject = enable;
   if (!enable) {
@@ -333,46 +288,6 @@ function toggleFastFirefoxInject(enable) {
   } else if (!xhrInject) {
     cache.destroy(); // nuking the cache so that CSAPI_REG is created for subsequent injections
   }
-}
-
-/** @param {chrome.webRequest.WebRequestHeadersDetails} info */
-function onSendHeaders(info) {
-  const { url, tabId } = info;
-  const isTop = isTopFrame(info);
-  const key = getKey(url, isTop);
-  if (!cache.has(key) && !skippedTabs[tabId]) {
-    prepare(key, url, isTop);
-  }
-}
-
-/** @param {chrome.webRequest.WebResponseHeadersDetails} info */
-function onHeadersReceived(info) {
-  const key = getKey(info.url, isTopFrame(info));
-  const bag = cache.get(key);
-  // The INJECT data is normally already in cache if code and values aren't huge
-  if (bag && !bag[FORCE_CONTENT] && bag[INJECT]?.[SCRIPTS] && !skippedTabs[info.tabId]) {
-    const ffReg = IS_FIREFOX && info.url.startsWith('https:')
-      && detectStrictCsp(info, bag);
-    const res = xhrInject && prepareXhrBlob(info, bag);
-    return ffReg ? ffReg.then(res && (() => res)) : res;
-  }
-}
-
-/**
- * @param {chrome.webRequest.WebResponseHeadersDetails} info
- * @param {VMInjection.Bag} bag
- */
-function prepareXhrBlob({ [kResponseHeaders]: responseHeaders, [kFrameId]: frameId, tabId }, bag) {
-  triageRealms(bag[INJECT][SCRIPTS], bag[FORCE_CONTENT], tabId, frameId, bag);
-  const blobUrl = URL.createObjectURL(new Blob([
-    JSON.stringify(bag[INJECT]),
-  ]));
-  responseHeaders.push({
-    name: kSetCookie,
-    value: `"${process.env.INIT_FUNC_NAME}"=${blobUrl.split('/').pop()}; SameSite=Lax`,
-  });
-  setTimeout(URL.revokeObjectURL, 60e3, blobUrl);
-  return { [kResponseHeaders]: responseHeaders };
 }
 
 function prepare(cacheKey, url, isTop) {
@@ -587,10 +502,17 @@ function injectContentRealm(toContent, tabId, frameId) {
   for (const [id, dataKey] of toContent) {
     const scr = cache.get(S_SCRIPT_PRE + id); // TODO: recreate if expired?
     if (!scr || scr.key.data !== dataKey) continue;
-    browser.tabs.executeScript(tabId, {
-      code: scr[__CODE].join(''),
-      [RUN_AT]: `document_${scr[RUN_AT]}`.replace('body', 'start'),
-      [kFrameId]: frameId,
+    chrome.scripting.executeScript({
+      target: { tabId, frameIds: [frameId] },
+      func: (code) => {
+        const script = document.createElement('script');
+        script.textContent = code;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+      },
+      args: [scr[__CODE].join('')],
+      world: 'MAIN',
+      injectImmediately: true,
     }).then(scr.meta[UNWRAP] && (() => sendTabCmd(tabId, 'Run', id, { [kFrameId]: frameId })));
   }
 }
@@ -622,34 +544,25 @@ function unregisterScriptFF(bag) {
  * @param {chrome.webRequest.WebResponseHeadersDetails} info
  * @param {VMInjection.Bag} bag
  */
-function detectStrictCsp(info, bag) {
-  const h = info[kResponseHeaders].find(findCspHeader);
-  if (!h) return;
-  let tmp = '';
-  let m, scriptSrc, scriptElemSrc, defaultSrc;
-  while ((m = CSP_RE.exec(h.value))) {
-    tmp += m[2] ? (defaultSrc = m[3]) : m[1] ? (scriptElemSrc = m[3]) : (scriptSrc = m[3]);
+function togglePreinject(enable) {
+  isApplied = enable;
+  const onOff = `${enable ? 'add' : 'remove'}Listener`;
+  browser.webNavigation.onCompleted[onOff](onNavigationCompleted);
+  tabsOnRemoved[onOff](onTabRemoved);
+  browser.tabs.onReplaced[onOff](onTabReplaced);
+  if (!enable) {
+    cache.destroy();
+    clearFrameData();
+    clearStorageCache();
   }
-  if (!tmp) return;
-  tmp = tmp.match(NONCE_RE);
-  if (tmp) {
-    bag[INJECT].nonce = tmp[1];
-  } else if (
-    scriptSrc && !scriptSrc.includes(UNSAFE_INLINE) ||
-    scriptElemSrc && !scriptElemSrc.includes(UNSAFE_INLINE) ||
-    !scriptSrc && !scriptElemSrc && defaultSrc && !defaultSrc.includes(UNSAFE_INLINE)
-  ) {
-    bag[FORCE_CONTENT] = bag[INJECT][FORCE_CONTENT] = true;
-  } else {
-    return;
-  }
-  m = unregisterScriptFF(bag);
-  if (m && !tmp) {
-    // Registering only without nonce, otherwise FF will incorrectly reuse it on tab reload
-    return Promise.all([
-      m,
-      bag[CSAPI_REG] = registerScriptDataFF(bag[INJECT], info.url),
-    ]);
+}
+
+function onNavigationCompleted(details) {
+  if (details.frameId === 0) { // Top-level frame
+    const key = getKey(details.url, true);
+    if (!cache.has(key) && !skippedTabs[details.tabId]) {
+      prepare(key, details.url, true);
+    }
   }
 }
 
