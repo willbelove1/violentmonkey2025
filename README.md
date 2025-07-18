@@ -8,11 +8,21 @@ This is a development version of Violentmonkey that has been migrated to Manifes
     ```
     git clone https://github.com/violentmonkey/violentmonkey.git
     ```
-2.  Install the dependencies:
+2.  Install the dependencies. You can use either `yarn` or `npm`.
+
+    **Using yarn:**
     ```
     cd violentmonkey
     yarn install
     ```
+    If you don't have yarn installed, you can install it by following the instructions on the official website: https://classic.yarnpkg.com/en/docs/install
+
+    **Using npm:**
+    ```
+    cd violentmonkey
+    npm install
+    ```
+    If you don't have Node.js and npm installed, you can download them from here: https://nodejs.org/
 3.  Build the extension:
     ```
     yarn build
