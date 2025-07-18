@@ -19,3 +19,10 @@ exports.extensions = [
   '.ts', '.tsx', '.mjs', '.js', '.jsx', '.vue',
 ];
 exports.exec = exec;
+
+exports.re = (strings, ...values) => {
+  const pattern = strings.raw[0];
+  const flags = pattern.match(/\/(\w*)$/)[1];
+  const source = pattern.replace(/^\/|\/\w*$/g, '');
+  return new RegExp(source.replace(/\s/g, ''), flags);
+};
